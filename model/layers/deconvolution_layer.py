@@ -3,7 +3,7 @@ from keras.layers.convolutional import Deconvolution2D
 from layer import Layer
 
 class DeconvolutionLayer(Layer):
-    def createLayer(self):
+    def create_layer(self):
         return Deconvolution2D(
                 nb_filter = self.layerParams['ngf'],
                 nb_row = self.layerParams['filter_height'],
