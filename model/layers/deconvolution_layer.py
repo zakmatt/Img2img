@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-from keras.layers.convolutional import Deconvolution2D
-from layer import Layer
+from keras.layers.convolutional import Deconv2D
+from layers.layer import Layer
+
 
 class DeconvolutionLayer(Layer):
     def create_layer(self):
-        return Deconvolution2D(
-                nb_filter = self.layerParams['ngf'],
-                nb_row = self.layerParams['filter_height'],
-                nb_col = self.layerParams['filter_width'],
-                subsample = self.layerParams['subsample'],
-                border_mode = self.layerParams['border_mode'],
-                init = self.layerParams['init'],
-                input_shape = self.layerParams['input_shape']
-                )
+        self.current_layer = Deconv2D(
+            filters=self.layer_params['ngf'],
+            kernel_size=self.layer_params['filter_size'],
+            strides=self.layer_params['strides'],
+            padding=self.layer_params['padding'],
+            kernel_initializer=self.layer_params['kernel_initializer'],
+            input_shape=self.layer_params['input_shape']
+        )

@@ -1,22 +1,18 @@
 from layers.convolution_layer import ConvolutionLayer
-from keras import initializers
-from keras.layers.convolutional import Conv2D
+from layers.deconvolution_layer import DeconvolutionLayer
+from keras.layers import Activation, Dropout, Concatenate
 from keras.layers.normalization import BatchNormalization
 from keras.layers.advanced_activations import LeakyReLU
 
-
-# train_X, tmp_x, ngf, filter_size, image_width, image_height, input_channel, output_channel, batch_size
 class Generator(object):
     def __init__(self, x_train, params):
         self.x_train = x_train
         self.params = params
 
-    def create_model(self):
+    def create_model(self, batch_size=64):
         input_channels = self.params['input_channels']
         img_width = self.params['img_width']
         img_height = self.params['img_height']
-
-        enc_dec_layers = []
 
         layer_params = {
             'ngf': self.params['ngf'],
@@ -24,42 +20,99 @@ class Generator(object):
             'strides': (2, 2),
             'padding': 'same',
             'kernel_initializer': 'random_normal',
-            'input_shape': (64, img_width, img_height, input_channels)
+            'input_shape': (batch_size, img_width, img_height, input_channels)
         }
 
-        # (256, 256) => (128, 128)
 
+        #change it to arrays!
+        ngf_values = [
+            self.params['ngf'] * 2,  # encoder_2: [batch, 128, 128, ngf] => [batch, 64, 64, ngf * 2]
+            self.params['ngf'] * 4,  # encoder_3: [batch, 64, 64, ngf * 2] => [batch, 32, 32, ngf * 4]
+            self.params['ngf'] * 8,  # encoder_4: [batch, 32, 32, ngf * 4] => [batch, 16, 16, ngf * 8]
+            self.params['ngf'] * 8,  # encoder_5: [batch, 16, 16, ngf * 8] => [batch, 8, 8, ngf * 8]
+            self.params['ngf'] * 8,  # encoder_6: [batch, 8, 8, ngf * 8] => [batch, 4, 4, ngf * 8]
+            self.params['ngf'] * 8,  # encoder_7: [batch, 4, 4, ngf * 8] => [batch, 2, 2, ngf * 8]
+            self.params['ngf'] * 8,  # encoder_8: [batch, 2, 2, ngf * 8] => [batch, 1, 1, ngf * 8]
+        ]
+        layers = []
+        encoder_layers = []
+        # (256, 256) => (128, 128)
         l_0 = ConvolutionLayer(self.x_train, layer_params)
         leaky_relu = LeakyReLU(alpha=0.2)
-        encoder_conv_output_0, encoder_processed_output_0 = l_0.process(activation=leaky_relu)
 
-        # (128, 128) => (64, 64)
-        layer_params['ngf'] *= 2
-        l_1 = ConvolutionLayer(encoder_processed_output_0, layer_params)
-        enc_bn_1 = BatchNormalization(epsilon=1e-5, momentum=0.9)
-        encoder_conv_output_1, encoder_processed_output_1 = l_1.process(activation=leaky_relu,
-                                                                        batch_norm=enc_bn_1)
+        encoder_conv_output, encoder_processed_output_0 = l_0.process(activation=leaky_relu)
+        encoder_layers.append(encoder_conv_output)
+        layers.append(encoder_processed_output_0)
 
-        # (64, 64) => (32, 32)
-        layer_params['ngf'] *= 2
-        l_2 = ConvolutionLayer(encoder_processed_output_1, layer_params)
-        enc_bn_2 = BatchNormalization(epsilon=1e-5, momentum=0.9)
-        encoder_conv_output_2, encoder_processed_output_2 = l_2.process(activation=leaky_relu,
-                                                                        batch_norm=enc_bn_2)
+        for ngf in ngf_values:
 
-        # (32, 32) => (16, 16)
-        layer_params['ngf'] *= 2
-        l_3 = ConvolutionLayer(encoder_processed_output_2, layer_params)
-        enc_bn_3 = BatchNormalization(epsilon=1e-5, momentum=0.9)
-        encoder_conv_output_3, encoder_processed_output_3 = l_3.process(activation=leaky_relu,
-                                                                        batch_norm=enc_bn_3)
+            layer_params['input_shape'] = (
+                batch_size,
+                layer_params['input_shape'][1]//2,
+                layer_params['input_shape'][2]//2,
+                layer_params['ngf']
+            )
+            layer_params['ngf'] = ngf
+            layer = ConvolutionLayer(layers[-1], layer_params)
+            batch_norm = BatchNormalization(epsilon=1e-5, momentum=0.9)
+            convolved, processed = layer.process(activation=leaky_relu, batch_norm=batch_norm)
+            encoder_layers.append(convolved)
+            layers.append(processed)
 
-        # (16, 16) => (8, 8)
-        layer_params['ngf'] *= 2
-        l_4 = ConvolutionLayer(encoder_processed_output_3, layer_params)
-        enc_bn_4 = BatchNormalization(epsilon=1e-5, momentum=0.9)
-        encoder_conv_output_4, encoder_processed_output_4 = l_4.process(activation=leaky_relu,
-                                                                        batch_norm=enc_bn_4)
+
+
+        layer_specs = [
+            (self.params['ngf'] * 8, 0.5),  # decoder_8: [batch, 1, 1, ngf * 8] => [batch, 2, 2, ngf * 8 * 2]
+            (self.params['ngf'] * 8, 0.5),  # decoder_7: [batch, 2, 2, ngf * 8 * 2] => [batch, 4, 4, ngf * 8 * 2]
+            (self.params['ngf'] * 8, 0.5),  # decoder_6: [batch, 4, 4, ngf * 8 * 2] => [batch, 8, 8, ngf * 8 * 2]
+            (self.params['ngf'] * 8, 0.0),  # decoder_5: [batch, 8, 8, ngf * 8 * 2] => [batch, 16, 16, ngf * 8 * 2]
+            (self.params['ngf'] * 4, 0.0),  # decoder_4: [batch, 16, 16, ngf * 8 * 2] => [batch, 32, 32, ngf * 4 * 2]
+            (self.params['ngf'] * 2, 0.0),  # decoder_3: [batch, 32, 32, ngf * 4 * 2] => [batch, 64, 64, ngf * 2 * 2]
+            (self.params['ngf'], 0.0),  # decoder_2: [batch, 64, 64, ngf * 2 * 2] => [batch, 128, 128, ngf * 2]
+        ]
+
+        relu = Activation('relu')
+        for decode_pos, (ngf, dropout) in enumerate(layer_specs):
+            if decode_pos == 0:
+                input = encoder_layers[-1]
+            else:
+                input = Concatenate(-1)([layers[-1], encoder_layers[-decode_pos-1]])
+
+            input = relu(input)
+
+            layer_params['input_shape'] = (
+                batch_size,
+                layer_params['input_shape'][1] if decode_pos == 0 else layer_params['input_shape'][1] * 2,
+                layer_params['input_shape'][2] if decode_pos == 0 else layer_params['input_shape'][2] * 2,
+                layer_params['ngf'] if decode_pos == 0 else layer_params['ngf'] * 2
+            )
+            layer_params['ngf'] = ngf
+            layer = DeconvolutionLayer(input, layer_params)
+            batch_norm = BatchNormalization(epsilon=1e-5, momentum=0.9)
+
+            if dropout > 0.0:
+                convolved = layer.process(batch_norm=batch_norm, dropout=Dropout(dropout))
+            else:
+                convolved = layer.process(batch_norm=batch_norm)
+
+            layers.append(convolved)
+
+        input = tf.concat([layers[-1], encoder_layers[0]], axis=3)
+        input = relu(input)
+
+        layer_params['input_shape'] = (
+            batch_size,
+            layer_params['input_shape'][1] * 2,
+            layer_params['input_shape'][2] * 2,
+            layer_params['ngf'] * 2
+        )
+        layer_params['ngf'] = input_channels
+        layer = DeconvolutionLayer(input, layer_params)
+        _, processed = layer.process(activation=Activation('tanh'))
+
+        return processed
+
+
 
 
 if __name__ == '__main__':
@@ -83,4 +136,5 @@ if __name__ == '__main__':
         'img_height': img_shape[1]
     }
     gen = Generator(labels, layer_params)
-    gen.create_model()
+    output = gen.create_model()
+    print(output.shape)
