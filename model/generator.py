@@ -1,13 +1,14 @@
-from layers.convolution_layer import ConvolutionLayer
-from layers.deconvolution_layer import DeconvolutionLayer
 from keras.layers import Activation, Dropout, Concatenate
 from keras.layers.normalization import BatchNormalization
 from keras.layers.advanced_activations import LeakyReLU
 
-class Generator(object):
-    def __init__(self, x_train, params):
-        self.x_train = x_train
-        self.params = params
+from layers.convolution_layer import ConvolutionLayer
+from layers.deconvolution_layer import DeconvolutionLayer
+
+from model import Model
+import tensorflow as tf
+
+class Generator(Model):
 
     def create_model(self, batch_size=64):
         input_channels = self.params['input_channels']
@@ -117,8 +118,6 @@ class Generator(object):
 
 if __name__ == '__main__':
     import numpy as np
-    import tensorflow as tf
-
     input_array = np.random.randn(64, 256, 256, 3)
     img_shape = list(input_array[0].shape)
     training_img_data = tf.placeholder(tf.float32, shape=[None] + img_shape)
