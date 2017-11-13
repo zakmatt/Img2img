@@ -13,6 +13,7 @@ class Layer(ABC):
 
     def process(self, activation=None, batch_norm=None, dropout=None):
         self.create_layer()
+        params = [self.current_layer, batch_norm] if batch_norm is not None else [self.current_layer]
         convolved_output = self.current_layer(self.layer_input)
 
         processed_output = None
@@ -25,4 +26,4 @@ class Layer(ABC):
         if activation is not None:
             processed_output = activation(convolved_output)
 
-        return (convolved_output, processed_output) if processed_output is not None else convolved_output
+        return (convolved_output, processed_output, params) if processed_output is not None else (convolved_output, params)

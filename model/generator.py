@@ -35,18 +35,19 @@ class Generator(Model):
             self.params['ngf'] * 8,  # encoder_7: [batch, 4, 4, ngf * 8] => [batch, 2, 2, ngf * 8]
             self.params['ngf'] * 8,  # encoder_8: [batch, 2, 2, ngf * 8] => [batch, 1, 1, ngf * 8]
         ]
+        params = []
         layers = []
         encoder_layers = []
         # (256, 256) => (128, 128)
         l_0 = ConvolutionLayer(self.x_train, layer_params)
         leaky_relu = LeakyReLU(alpha=0.2)
 
-        encoder_conv_output, encoder_processed_output_0 = l_0.process(activation=leaky_relu)
+        encoder_conv_output, encoder_processed_output_0, l_params = l_0.process(activation=leaky_relu)
         encoder_layers.append(encoder_conv_output)
         layers.append(encoder_processed_output_0)
+        params += l_params
 
         for ngf in ngf_values:
-
             layer_params['input_shape'] = (
                 batch_size,
                 layer_params['input_shape'][1]//2,
@@ -56,9 +57,10 @@ class Generator(Model):
             layer_params['ngf'] = ngf
             layer = ConvolutionLayer(layers[-1], layer_params)
             batch_norm = BatchNormalization(epsilon=1e-5, momentum=0.9)
-            convolved, processed = layer.process(activation=leaky_relu, batch_norm=batch_norm)
+            convolved, processed, l_params = layer.process(activation=leaky_relu, batch_norm=batch_norm)
             encoder_layers.append(convolved)
             layers.append(processed)
+            params += l_params
 
 
 
@@ -77,7 +79,7 @@ class Generator(Model):
             if decode_pos == 0:
                 input = encoder_layers[-1]
             else:
-                input = Concatenate(-1)([layers[-1], encoder_layers[-decode_pos-1]])
+                input = Concatenate(axis=-1)([layers[-1], encoder_layers[-decode_pos-1]])
 
             input = relu(input)
 
@@ -92,11 +94,12 @@ class Generator(Model):
             batch_norm = BatchNormalization(epsilon=1e-5, momentum=0.9)
 
             if dropout > 0.0:
-                convolved = layer.process(batch_norm=batch_norm, dropout=Dropout(dropout))
+                convolved, l_params = layer.process(batch_norm=batch_norm, dropout=Dropout(dropout))
             else:
-                convolved = layer.process(batch_norm=batch_norm)
+                convolved, l_params = layer.process(batch_norm=batch_norm)
 
             layers.append(convolved)
+            params += l_params
 
         input = tf.concat([layers[-1], encoder_layers[0]], axis=3)
         input = relu(input)
@@ -109,9 +112,10 @@ class Generator(Model):
         )
         layer_params['ngf'] = input_channels
         layer = DeconvolutionLayer(input, layer_params)
-        _, processed = layer.process(activation=Activation('tanh'))
+        _, processed, l_params = layer.process(activation=Activation('tanh'))
+        params += l_params
 
-        return processed
+        return processed, params
 
 
 
@@ -135,5 +139,6 @@ if __name__ == '__main__':
         'img_height': img_shape[1]
     }
     gen = Generator(labels, layer_params)
-    output = gen.create_model()
+    output, params = gen.create_model()
     print(output.shape)
+    print(len(params))
