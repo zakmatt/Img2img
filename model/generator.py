@@ -1,12 +1,13 @@
-from keras.layers import Activation, Dropout, Concatenate
+from keras.layers import Activation, Dropout, Concatenate, Input
 from keras.layers.normalization import BatchNormalization
 from keras.layers.advanced_activations import LeakyReLU
+from keras.models import Model as mdl
 
 from layers.convolution_layer import ConvolutionLayer
 from layers.deconvolution_layer import DeconvolutionLayer
 
 from model import Model
-import tensorflow as tf
+#import tensorflow as tf
 
 class Generator(Model):
 
@@ -38,8 +39,9 @@ class Generator(Model):
         params = []
         layers = []
         encoder_layers = []
+        g_inputs = Input(shape=(img_width, img_height, input_channels))
         # (256, 256) => (128, 128)
-        l_0 = ConvolutionLayer(self.x_train, layer_params)
+        l_0 = ConvolutionLayer(g_inputs, layer_params)#self.x_train, layer_params)
         leaky_relu = LeakyReLU(alpha=0.2)
 
         encoder_conv_output, encoder_processed_output_0, l_params = l_0.process(activation=leaky_relu)
@@ -101,7 +103,7 @@ class Generator(Model):
             layers.append(convolved)
             params += l_params
 
-        input = tf.concat([layers[-1], encoder_layers[0]], axis=3)
+        input = Concatenate(axis=-1)([layers[-1], encoder_layers[0]])
         input = relu(input)
 
         layer_params['input_shape'] = (
@@ -115,7 +117,9 @@ class Generator(Model):
         _, processed, l_params = layer.process(activation=Activation('tanh'))
         params += l_params
 
-        return processed, params
+        model = mdl(g_inputs, processed)
+
+        return model, params
 
 
 
@@ -124,13 +128,13 @@ if __name__ == '__main__':
     import numpy as np
     input_array = np.random.randn(64, 256, 256, 3)
     img_shape = list(input_array[0].shape)
-    training_img_data = tf.placeholder(tf.float32, shape=[None] + img_shape)
-    training_label_data = tf.placeholder(tf.float32, shape=[2] + img_shape)
-    queue = tf.FIFOQueue(shapes=[img_shape, img_shape],
-                         dtypes=[tf.float32, tf.float32],
-                         capacity=2000)
-    enqueue_ops = queue.enqueue_many([training_label_data, training_img_data])
-    labels, imgs = queue.dequeue_many(64)
+    #training_img_data = tf.placeholder(tf.float32, shape=[None] + img_shape)
+    #training_label_data = tf.placeholder(tf.float32, shape=[2] + img_shape)
+    #queue = tf.FIFOQueue(shapes=[img_shape, img_shape],
+    #                     dtypes=[tf.float32, tf.float32],
+    #                     capacity=2000)
+    #enqueue_ops = queue.enqueue_many([training_label_data, training_img_data])
+    #labels, imgs = queue.dequeue_many(64)
     layer_params = {
         'ngf': 64,
         'filter_size': 4,
@@ -138,7 +142,5 @@ if __name__ == '__main__':
         'img_width': img_shape[0],
         'img_height': img_shape[1]
     }
-    gen = Generator(labels, layer_params)
+    gen = Generator(None, layer_params)
     output, params = gen.create_model()
-    print(output.shape)
-    print(len(params))

@@ -1,4 +1,4 @@
-from keras.layers import Activation, Flatten
+from keras.layers import Activation, ZeroPadding2D
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import Conv2D
 from keras.layers.normalization import BatchNormalization
@@ -42,93 +42,66 @@ class Discriminator(Model):
         patchGAN.add(BatchNormalization())
         patchGAN.add(LeakyReLU(alpha=0.2))
 
+        padding = (1, 1)
+        patchGAN.add(ZeroPadding2D(
+            padding=padding
+        ))
         # C512 32=>16
         patchGAN.add(Conv2D(ndf * 8,
                                    kernel_size=self.params['kernel_size'],
-                                   strides=(1, 1),
-                                   padding='same',
                                    kernel_initializer='random_normal',
                                    ))
         patchGAN.add(BatchNormalization())
         patchGAN.add(LeakyReLU(alpha=0.2))
 
+        patchGAN.add(ZeroPadding2D(
+            padding=padding
+        ))
+
         patchGAN.add(Conv2D(1,
                                    kernel_size=self.params['kernel_size'],
-                                   strides=(1, 1),
-                                   padding='same',
                                    kernel_initializer='random_normal',
                                    ))
         patchGAN.add(Activation('sigmoid'))
-        patchGAN.add(Flatten())
         return patchGAN
-        '''
-        ndf = self.params['ndf']
-
-        ndf_values = [
-            2 * ndf,
-            4 * ndf,
-            8 * ndf
-        ]
-
-        model = Sequential()
-
-        model.add(
-            Conv2D(
-                filters=ndf,
-                kernel_size=self.params['kernel_size'],
-                strides=(2, 2),
-                padding='same',
-                kernel_initializer='random_normal',
-                input_shape=self.params['input_shape']
-            )
-        )
-        model.add(LeakyReLU(alpha=0.2))
-
-        for pos, ndf in enumerate(ndf_values):
-            model.add(Conv2D(
-                filters=ndf,
-                kernel_size=self.params['kernel_size'],
-                strides=(2, 2) if pos != len(ndf_values)-1 else (1, 1),
-                padding='same',
-                kernel_initializer='random_normal'
-            ))
-            model.add(BatchNormalization())
-            model.add(LeakyReLU(alpha=0.2))
-
-        model.add(Conv2D(
-            filters=1,
-            kernel_size=self.params['kernel_size'],
-            strides=(1, 1),
-            padding='same',
-            kernel_initializer='random_normal'
-        ))
-        model.add(Activation('sigmoid'))
-        model.add(Flatten())
-
-        self.model = model
-        '''
 
 if __name__=='__main__':
     import numpy as np
     import tensorflow as tf
-    input_array = np.random.randn(64, 256, 256, 3)
-    img_shape = list(input_array[0].shape)
+    from keras.layers import Concatenate
+    from keras import optimizers
+    from keras import backend as K
+
+    labels = np.random.randn(64, 256, 256, 3)
+    imgs = np.random.randn(64, 256, 256, 3)
+    images_shape = labels[0].shape
+    '''
     training_img_data = tf.placeholder(tf.float32, shape=[None] + img_shape)
     training_label_data = tf.placeholder(tf.float32, shape=[None] + img_shape)
     queue = tf.FIFOQueue(shapes=[img_shape, img_shape],
                          dtypes=[tf.float32, tf.float32],
                          capacity=2000)
     enqueue_ops = queue.enqueue_many([training_label_data, training_img_data])
+    
     labels, imgs = queue.dequeue_many(64)
-    input = tf.concat([labels, imgs], axis=3)
+    '''
+    input = np.concatenate((labels, imgs), axis=-1)
     layer_params = {
         'ndf': 64,
         'kernel_size': (4, 4),
-        'input_shape': (img_shape[0], img_shape[1], img_shape[2] * 2)
+        'input_shape': (images_shape[0], images_shape[1], images_shape[2] * 2)
     }
     disc = Discriminator(input, layer_params)
-    disc.create_model()
-    output = disc.model(input)
+    discriminator = disc.create_model()
+    output = discriminator.predict(input)
     print(output.shape)
 
+
+    def discriminator_on_generator_loss(y_true, y_pred):
+        cross_entropy = K.binary_crossentropy(y_pred, y_true)
+        return K.mean(cross_entropy, axis=-1)
+
+    #adam_optimizer = optimizers.Adam(lr=0.0002, beta_1=0.5)
+    discriminator.trainable = True
+    discriminator.compile(optimizer='RMSprop', loss=discriminator_on_generator_loss)
 

@@ -20,3 +20,6 @@ class Data:
 
     def get_data(self):
         return self.labels.astype(np.float32), self.targets.astype(np.float32)
+
+    def data_amount(self):
+        return len(self.labels)
