@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Process labeled image</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+  <link href='/static/main.css' rel='stylesheet' type='text/css'>
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</head>
+
+<body>
+  <div class="container">
+      <h1>Process labeled image and get a real facade!</h1>
+      <h2 class="form-signin-heading">Upload your labeled image</h2>
+      <form id="upload-file" method="post" enctype="multipart/form-data">
+          <label class="btn btn-primary">
+              <fieldset>
+                  Select <input name="file" type="file" style="display:none;">
+              </fieldset>
+          </label>
+          <label class="btn btn-primary">
+              <fieldset>
+                  Upload <button id="upload-file-btn" type="button" style="display:none;"></button>
+              </fieldset>
+          </label>
+          <img id="loading" class="loader" src="/static/loader.svg">
+    </form>
+  </div>
+
+  <div class="container">
+      <div id="generated_image"></div>
+  </div>
+</body>
