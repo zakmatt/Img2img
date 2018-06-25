@@ -1,5 +1,7 @@
 import tensorflow as tf
 
+from collections import namedtuple
+
 from .utils import (
     gen_conv,
     lrelu,
@@ -8,6 +10,19 @@ from .utils import (
     discrim_conv
 )
 
+EPS = 1e-12
+Model = namedtuple(
+    'Model',
+    ['outputs',
+     'predict_real',
+     'predict_fake',
+     'discrim_loss',
+     'discrim_grads_and_vars',
+     'gen_loss_GAN',
+     'gen_loss_L1',
+     'gen_grads_and_vars',
+     'train']
+)
 
 class Unet(object):
 
@@ -83,6 +98,20 @@ class Unet(object):
 
         return layers[-1]
 
+    @staticmethod
+    def generator_loss(predict_fake,
+                       targets,
+                       generated,
+                       gan_weight=1.0,
+                       l1_weight=100):
+        with tf.variable_scope('generator_loss'):
+            # predict_fake => 1
+            # abs(targets - outputs) => 0
+            gen_loss_gan = tf.reduce_mean(-tf.log(predict_fake + EPS))
+            gen_loss_l1 = tf.reduce_mean(tf.abs(targets - generated))
+            gen_loss = gen_loss_gan * gan_weight + gen_loss_l1 * l1_weight
+            return gen_loss, gen_loss_l1, gen_loss_gan
+
 
     @staticmethod
     def discriminator(inputs, targets, n_filters):
@@ -116,8 +145,95 @@ class Unet(object):
             output = tf.nn.sigmoid(convolved)
             layers.append(output)
 
+    @staticmethod
+    def discriminator_loss(predict_real, predict_fake):
+        with tf.variable_scope('discriminator_loss'):
+            # minimizing -tf.log will try to get inputs to 1
+            # predict_real => 1
+            # predict_fake => 0
+            return tf.reduce_mean(
+                -(tf.log(predict_real + EPS) + tf.log(1 - predict_fake + EPS))
+            )
 
 
     @staticmethod
     def model(inputs, targets):
-        pass
+        """
+
+        Create a U-Net model with skip connections
+
+        :param inputs: Input images
+        :type inputs: tensorflow.placeholder
+        :param targets: targeting images
+        :type targets: tensorflow.placeholder
+        :return:
+        """
+        with tf.variable_scope('generator'):
+            output_channels = int(targets.get_shape()[-1])
+            generated = Unet.generator(inputs, output_channels, 64)
+
+        # create two copies of discriminator, one for real pairs
+        # and one for fake pairs. They share the same underlying variables
+        with tf.variable_scope('discriminator_real'):
+            with tf.variable_scope('discriminator'):
+                # 2x [batch, height, width, channels] => [batch, 30, 30, 1]
+                predict_real = Unet.discriminator(inputs, targets, 64)
+
+        with tf.variable_scope('discriminator_fake'):
+            with tf.variable_scope('discriminator', reuse=True):
+                predict_fake = Unet.discriminator(inputs, generated, 64)
+
+        discriminator_loss = Unet.discriminator_loss(
+            predict_real,
+            predict_fake
+        )
+        generator_loss, generator_loss_l1, gen_loss_gan = Unet.generator_loss(
+            predict_fake,
+            targets,
+            generated
+        )
+
+        with tf.variable_scope('discriminator_train'):
+            discrim_train_vars = [
+                var for var in tf.trainable_variables()
+                if var.name.startswith('discriminator')
+            ]
+            discrim_optim = tf.train.AdamOptimizer(0.0002, 0.5)
+            discrim_grads_vars = discrim_optim.compute_gradients(
+                discriminator_loss,
+                var_list=discrim_train_vars
+            )
+            discrim_train = discrim_optim.apply_gradients(discrim_grads_vars)
+
+        with tf.variable_scope('generator_train'):
+            with tf.control_dependencies([discrim_train]):
+                gen_train_vars = [
+                    var for var in tf.trainable_variables()
+                    if var.name.startswith('generator')
+                ]
+                gen_optim = tf.train.AdamOptimizer(0.0002, 0.5)
+                gen_grads_vards = gen_optim.compute_gradients(
+                    generator_loss,
+                    var_list=gen_train_vars
+                )
+                gen_train = gen_optim.apply_gradients(gen_grads_vards)
+
+        exp_moving_average = tf.train.ExponentialMovingAverage(decay=0.99)
+        update_losses = exp_moving_average.apply(
+            [discriminator_loss, generator_loss, generator_loss_l1]
+        )
+
+        global_step = tf.train.get_or_create_global_step()
+        incr_global_step = tf.assign(global_step, global_step + 1)
+
+        return Model(
+            predict_real=predict_real,
+            predict_fake=predict_fake,
+            discrim_loss=exp_moving_average.average(discriminator_loss),
+            discrim_grads_and_vars=discrim_grads_vars,
+            gen_loss_GAN=exp_moving_average.average(gen_loss_gan),
+            gen_loss_L1=exp_moving_average.average(generator_loss_l1),
+            gen_grads_and_vars=gen_grads_vards,
+            outputs=generated,
+            train=tf.group(update_losses, incr_global_step, gen_train),
+        )
