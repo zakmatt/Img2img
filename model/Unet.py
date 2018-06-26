@@ -2,7 +2,7 @@ import tensorflow as tf
 
 from collections import namedtuple
 
-from .utils import (
+from utils.model_utils import (
     gen_conv,
     lrelu,
     batch_norm,
@@ -24,10 +24,10 @@ Model = namedtuple(
      'train']
 )
 
-class Unet(object):
 
+class Unet(object):
     @staticmethod
-    def generator(inputs, output_channels, n_filters):
+    def generator(inputs, out_channels, n_filters):
         layers = []
 
         # encode [batch_size, 256, 256, input_chann] =>
@@ -88,11 +88,11 @@ class Unet(object):
             layers.append(output)
 
         # decoder_1: [batch_size, 128, 128, n_filters * 2] =>
-        #            [batch_size, 256, 256, output_channels]
+        #            [batch_size, 256, 256, out_channels]
         with tf.variable_scope('decoder_1'):
             inputs = tf.concat([layers[-1], layers[0]], axis=3)
             rectified_inputs = tf.nn.relu(inputs)
-            output = gen_deconv(rectified_inputs, output_channels)
+            output = gen_deconv(rectified_inputs, out_channels)
             output = tf.nn.tanh(output)
             layers.append(output)
 
@@ -111,7 +111,6 @@ class Unet(object):
             gen_loss_l1 = tf.reduce_mean(tf.abs(targets - generated))
             gen_loss = gen_loss_gan * gan_weight + gen_loss_l1 * l1_weight
             return gen_loss, gen_loss_l1, gen_loss_gan
-
 
     @staticmethod
     def discriminator(inputs, targets, n_filters):
@@ -132,7 +131,7 @@ class Unet(object):
         for i in range(n_layers):
             layer_name = 'layer_{}'.format(len(layers) + 1)
             with tf.variable_scope(layer_name):
-                output_channels = n_filters * min(2**(i + 1), 8)
+                output_channels = n_filters * min(2 ** (i + 1), 8)
                 stride = 1 if i == n_layers - 1 else 2
                 convolved = discrim_conv(layers[-1], output_channels, stride)
                 normalized = batch_norm(convolved)
@@ -145,6 +144,8 @@ class Unet(object):
             output = tf.nn.sigmoid(convolved)
             layers.append(output)
 
+        return layers[-1]
+
     @staticmethod
     def discriminator_loss(predict_real, predict_fake):
         with tf.variable_scope('discriminator_loss'):
@@ -154,7 +155,6 @@ class Unet(object):
             return tf.reduce_mean(
                 -(tf.log(predict_real + EPS) + tf.log(1 - predict_fake + EPS))
             )
-
 
     @staticmethod
     def model(inputs, targets):
@@ -174,14 +174,12 @@ class Unet(object):
 
         # create two copies of discriminator, one for real pairs
         # and one for fake pairs. They share the same underlying variables
-        with tf.variable_scope('discriminator_real'):
-            with tf.variable_scope('discriminator'):
-                # 2x [batch, height, width, channels] => [batch, 30, 30, 1]
-                predict_real = Unet.discriminator(inputs, targets, 64)
+        with tf.variable_scope('discriminator'):
+            # 2x [batch, height, width, channels] => [batch, 30, 30, 1]
+            predict_real = Unet.discriminator(inputs, targets, 64)
 
-        with tf.variable_scope('discriminator_fake'):
-            with tf.variable_scope('discriminator', reuse=True):
-                predict_fake = Unet.discriminator(inputs, generated, 64)
+        with tf.variable_scope('discriminator', reuse=True):
+            predict_fake = Unet.discriminator(inputs, generated, 64)
 
         discriminator_loss = Unet.discriminator_loss(
             predict_real,
@@ -220,7 +218,7 @@ class Unet(object):
 
         exp_moving_average = tf.train.ExponentialMovingAverage(decay=0.99)
         update_losses = exp_moving_average.apply(
-            [discriminator_loss, generator_loss, generator_loss_l1]
+            [discriminator_loss, gen_loss_gan, generator_loss_l1]
         )
 
         global_step = tf.train.get_or_create_global_step()

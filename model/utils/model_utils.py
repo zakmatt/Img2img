@@ -25,7 +25,7 @@ def gen_deconv(batch_input, out_channels):
     return tf.layers.conv2d_transpose(
         batch_input,
         out_channels,
-        kernel_size=2,
+        kernel_size=4,
         strides=(2, 2),
         padding='same',
         kernel_initializer=initializer
@@ -42,7 +42,7 @@ def discrim_conv(batch_input, out_channels, stride):
     return tf.layers.conv2d(
         padded_input,
         out_channels,
-        kernel_size=2,
+        kernel_size=4,
         strides=(stride, stride),
         padding='valid',
         kernel_initializer=initializer
