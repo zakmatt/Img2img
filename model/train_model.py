@@ -63,7 +63,7 @@ def main():
 
                 file_name = "./model_time_{}_hours".format(
                     (time.time() - start) // HOUR)
-                save_path = saver.save(sess, save_path=file_name)
+                saver.save(sess, save_path=file_name)
                 print('Model saved.')
 
 
